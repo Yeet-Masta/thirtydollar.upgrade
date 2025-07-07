@@ -30,6 +30,7 @@ function modifyNumber(num, newNum, operator) {
     switch (operator) {
         case "add": return num + newNum
         case "multiply": return num * newNum
+        case "divide": return (newNum <= 0 ? num : num / newNum)
         default: return newNum
     }
 }

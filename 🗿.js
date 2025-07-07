@@ -4,18 +4,19 @@ let recent = new Set()
 
 const mobile = ( /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAgent) ) 
 if (mobile) $('p[mobile]').each(function() { $(this).text($(this).attr('mobile')); $('.nomobile').hide() })
-
+	
 const intros = [
     {name: $('#caption').text(), path: "assets/dont_you_lecture_me.wav" },
     {name: "how you gonna talk behind my back when you deadass built like a", path: "assets/you_deadass_built_like_a.wav" },
-    {name: "white people be like", path: "assets/white_people_be_like.wav" }
+    {name: "white people be like", path: "assets/white_people_be_like.wav" },
+    {name: "omg bruh oh hell naw man wtf man", path: "assets/omgbruhohhellnaw.wav" }
 ]
 
 const actions = [
-    { shortcut: "t", action: "Set tempo", amount: true, name: "speed", image: "assets/action_speed.png", default: 300, set: [10, 10000], add: [-10000, 10000], multiply: [0.01, 1000, 0.1] },
-    { shortcut: "v", action: "Set volume", amount: true, name: "volume", image: "assets/action_volume.png", default: 100, set: [0, 600, 1, "%"], add: [-600, 600, 1, "%"], multiply: [0.01, 1000, 0.1] },
+    { shortcut: "t", action: "Set tempo", amount: true, name: "speed", image: "assets/action_speed.png", default: 300, set: [10, 10000], add: [-10000, 10000], multiply: [0.01, 1000, 0.1], divide: [0.1, 100, 0.1] },
+    { shortcut: "v", action: "Set volume", amount: true, name: "volume", image: "assets/action_volume.png", default: 100, set: [0, 600, 1, "%"], add: [-600, 600, 1, "%"], multiply: [0.01, 1000, 0.1], divide: [0.1, 100, 0.1] },
     { shortcut: "p", action: "Pause for duration", amount: true, name: "stop", image: "assets/action_stop.png", default: 4, set: [0, 1000] },
-    { shortcut: "m", action: "Transpose", amount: true, name: "transpose", image: "assets/action_transpose.png", default: 1, set: [-60, 60], add: [-60, 60], multiply: [0.01, 100, 0.1]  },
+    { shortcut: "m", action: "Transpose", amount: true, name: "transpose", image: "assets/action_transpose.png", default: 1, set: [-60, 60], add: [-60, 60] },
  
     { shortcut: "l", action: "Loop", amount: true, name: "loopmany", image: "assets/action_loopmany.png", default: 4, set: [1, 1000] },
     { shortcut: "r", action: "Loop once", name: "loop", image: "assets/action_loop.png" },
@@ -40,7 +41,7 @@ fetch("./sounds.json?v=6").then(x => x.json()).then(list => {
     $('#iconboxLoading').hide()
     $('#icons').removeClass('loadingIcons')
     list.forEach(x => {
-        let imageLink = (!x.emoji && x.id.match(/[a-z0-9]/i)) ? `icons/${x.img || x.id}.png` : `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/${(x.emoji || x.id).codePointAt(0).toString(16)}.svg`
+        let imageLink = (!x.emoji && x.id.match(/[a-z0-9]/i)) ? `icons/${x.img || x.id}.png` : `emoji/${(x.emoji || x.id).codePointAt(0).toString(16)}.svg`
         $('#icons').append(`<div class="sound" soundName="${x.name}" soundOrigin="${x.source || ""}" sound="sounds/${x.id}.wav" str="${x.id}" ${(x.tags || []).map(x => "tag_" + x).join(" ")}><img alt="${x.name}" src="${imageLink}"></div>`)
         lastGroup = x.group
     })
@@ -110,6 +111,7 @@ $('#sequence').sortable({
         ui.placeholder.html(ui.item.html())
     },
     stop: function(event, ui) {
+        setUnsavedChanges(true)
         if (cloneSort) {
             ui.item.clone().insertAfter(ui.item);
             $(this).sortable('cancel');
@@ -215,7 +217,7 @@ $(document).on('click contextmenu', '#icons div, #hotbarNotes div.sound', functi
     added.removeAttr("soundorigin")
     added.removeAttr("soundname")
     updateRecent(soundID);
-    addToSequence(added)
+    addToSequence(added);
 })
 
 $(document).on('click contextmenu', '#actions div, #hotbarNotes div.action', function (event) {
@@ -270,7 +272,11 @@ $(document).on('click contextmenu', '#actions div, #hotbarNotes div.action', fun
 })
 
 function getPrefix(num, amt) {
-    return num == "plus" ? (amt >= 0 ? "+" : "") : num == "add" ? "+" : num == "multiply" ? "⨯" : ""
+    return num == "plus" ? (amt >= 0 ? "+" : "")
+    : num == "add" ? "+"
+    : num == "multiply" ? "â¨¯"
+    : num == "divide" ? "/"
+    : ""
 }
 
 function addToSequence(element, noPrepend, copyGroup) {
@@ -286,6 +292,7 @@ function addToSequence(element, noPrepend, copyGroup) {
     }
     prependMode ? container.prepend(element) : appendToSection(container, element)
     if (element.attr("action") == "divider") syncSections()
+    setUnsavedChanges(true)
 }
 
 // add to end, or second last if it ends with a divider
@@ -294,6 +301,7 @@ function appendToSection(container, element) {
     let hasDivider = (lastChild.attr("action") == "divider")
     if (hasDivider) element.insertBefore(lastChild)
     else container.append(element)
+    setUnsavedChanges(true)
 }
 
 function addAction(action, input, num="set", element=stash, dontAppend=false) {
@@ -301,9 +309,12 @@ function addAction(action, input, num="set", element=stash, dontAppend=false) {
     if (!element || isNaN(input)) return
     let amount = Number(Number(input).toFixed(3)) // tofixed converts to string lmao
     let foundAction = actions.find(x => x.name == action)
+    if (!foundAction) return
     let actionData = foundAction[num]
+    if (num && !actionData) { num = "set"; actionData = foundAction.set }
 
     amount = clamp(amount, actionData[0], actionData[1])
+    if (num == "multiply" && altHeld) num = "divide"
     let prefix = getPrefix(num, amount)
     let amountStr = prefix + String(amount) + (actionData[3] || "")
     //element.attr("min", actionData[0]).attr("max", actionData[1])
@@ -319,6 +330,7 @@ function addAction(action, input, num="set", element=stash, dontAppend=false) {
     updateRecent("." + action)
     if (stash) stash = null
     $('.popup').hide()
+    setUnsavedChanges(true)
 }
 
 // eh i'm just gonna make a new function for this
@@ -342,12 +354,14 @@ function addAdvancedAction(action, inputs, element=stash, dontAppend=false) {
     else return element
     if (stash) stash = null
     $('.popup').hide()
+    setUnsavedChanges(true)
 }
 
 function editAction(element) {
     replaceAction.replaceWith(element)
     replaceAction.runAnimation('placed')
     replaceAction = null
+    setUnsavedChanges(true)
 }
 
 function syncSections() {
@@ -372,6 +386,7 @@ function syncSections() {
         }
     })
     $('#sequence').html(noteGroups.map((x, y) => `<section class="${y == selectedDivider ? 'selectedDivider' : ''} ${collapsedSections.includes(y) ? "sectionHidden" : ""}" group="${y}">${x}</section>`).join(""))
+    setUnsavedChanges(true)
     if (dividerIndex > 0) $('#sectionSettings').show()
     else $('#sectionSettings').hide()
 }
@@ -460,6 +475,7 @@ $(document).on('click', '#sequence div', function () {
         deselectSection()
         syncSections()
     }
+    setUnsavedChanges(true)
 })
 
 $(document).on('contextmenu', '#sequence div', function () {
@@ -569,6 +585,7 @@ $(document).on('wheel touchmove', '#sequence div', function(event) {
             el.attr("vol", shift)
             playSound(el.attr("sound"), { pitch: getPitch(el), volume: shift / 100 / 2, stopPrevious: true })
         }
+        setUnsavedChanges(true)
     }
     else if (el.attr("action") && el.attr("amount")) {
         let bounds = foundAction[el.attr("num") || "set"]
@@ -580,6 +597,7 @@ $(document).on('wheel touchmove', '#sequence div', function(event) {
         shift = clamp(shift, bounds[0], bounds[1] || 999)
         el.attr("amount", shift)
         el.find("p").text(getPrefix(el.attr("num"), shift) + shift + (bounds[3] || ""))
+        setUnsavedChanges(true)
     }
     else if (foundAction && el.attr("advanced")) {
         let scrollInfo = foundAction.scroll
@@ -594,6 +612,7 @@ $(document).on('wheel touchmove', '#sequence div', function(event) {
         el.attr(valStr, scrollVal)
         if (foundAction.colorMode) el.find("p").children().last().text(el.attr("val2"))
         else el.find("p").text(`${el.attr("val1")}, ${el.attr("val2")}`)
+        setUnsavedChanges(true)
     }
 })
 
@@ -838,6 +857,7 @@ $('#clearsounds').click(function() {
     $('#saveName').val('');
     $('#sectionSettings').hide()
     $('.popup').hide();
+    setUnsavedChanges(false)
     filename = "sequence"
     saveLocation = null
 })
